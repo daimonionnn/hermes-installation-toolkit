@@ -1,4 +1,4 @@
-# 🐉 Hermes Agent Installation Toolkit
+# 🐉 Hermes Installation Toolkit
 
 A practical guide and set of scripts for installing **Hermes Agent** — a fully self-hosted, offline-capable AI agent — on Linux systems. Includes setup for local LLM inference, browser automation, web search backends, Chrome DevTools MCP integration, and migration from OpenClaw.
 
@@ -164,7 +164,7 @@ After running, open Obsidian, open `~/Obsidian` as your vault, then go to **Sett
 ## 🛠️ What's Included
 
 ```
-hermes-agent-installation-toolkit/
+hermes-installation-toolkit/
 ├── README.md                          # You are here
 ├── Doc/
 │   ├── fix-firecrawl-and-browser.md   # Firecrawl deps + browser sandbox fix
