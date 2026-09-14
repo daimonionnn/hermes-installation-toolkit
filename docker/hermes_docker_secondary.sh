@@ -32,7 +32,7 @@ Environment overrides:
   HERMES_SECONDARY_CONTAINER   Container name (default: hermes-secondary)
   HERMES_SECONDARY_IMAGE       Image (default: nousresearch/hermes-agent:latest)
   CONTAINER_CLI                Container CLI (default: docker)
-  COMPOSE_CLI                  Compose CLI (default: docker-compose)
+  COMPOSE_CLI                  Compose CLI (default: docker compose)
 EOF
 }
 

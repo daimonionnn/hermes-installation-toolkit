@@ -11,6 +11,16 @@ PORT=9222
 USER_DATA_DIR="$HOME/.config/google-chrome-ai-agent"
 SERVICE="chrome-cdp.service"
 
+CHROME_BIN=$(command -v google-chrome || command -v google-chrome-stable || true)
+if [[ -z "$CHROME_BIN" ]]; then
+    echo "ERROR: google-chrome not found in PATH" >&2
+    exit 1
+fi
+
+port_in_use() {
+    ss -tln | grep -q ":$PORT "
+}
+
 # ── Stop the headless service if it holds the port ───────────────────────────
 if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
     echo "==> Stopping headless $SERVICE to free port $PORT..."
@@ -19,18 +29,22 @@ if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
     trap 'echo "==> Restarting headless $SERVICE..."; sudo systemctl start "$SERVICE"' EXIT
 fi
 
-# Wait up to 3 seconds for the port to be released
-for i in 1 2 3; do
-    ss -tlnp | grep -q ":$PORT " || break
+# Wait up to 5 seconds for the port to be released
+for _ in 1 2 3 4 5; do
+    port_in_use || break
     sleep 1
 done
+if port_in_use; then
+    echo "ERROR: port $PORT is still in use; Chrome would start without remote debugging." >&2
+    echo "       Check what holds it:  ss -tlnp | grep :$PORT" >&2
+    exit 1
+fi
 
 echo "==> Starting Chrome with remote debugging on port $PORT"
 echo "    CDP endpoint: http://localhost:$PORT"
 echo "    Close this terminal or press Ctrl-C to stop Chrome and restore the headless service."
 echo ""
 
-google-chrome \
+"$CHROME_BIN" \
     --remote-debugging-port=$PORT \
     --user-data-dir="$USER_DATA_DIR"
-

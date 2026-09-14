@@ -2,7 +2,7 @@
 
 A practical guide and set of scripts for installing **Hermes Agent** — a fully self-hosted, offline-capable AI agent — on Linux systems. Includes setup for local LLM inference, browser automation, web search backends, Chrome DevTools MCP integration, and migration from OpenClaw.
 
-[![Hermes Agent](https://img.shields.io/badge/Hermes-v0.11.0-blue)](https://hermes-agent.nousresearch.com/) [![Platform](https://img.shields.io/badge/Platform-Linux-green)](https://ubuntu.com/) [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![Hermes Agent](https://img.shields.io/badge/Hermes-v0.21.2-blue)](https://hermes-agent.nousresearch.com/) [![Platform](https://img.shields.io/badge/Platform-Linux-green)](https://ubuntu.com/) [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 > **Official docs:** <https://hermes-agent.nousresearch.com/docs>
 
@@ -12,7 +12,7 @@ A practical guide and set of scripts for installing **Hermes Agent** — a fully
 
 | Component | Spec |
 |---|---|
-| OS | Ubuntu 24.04 / 25.04 LTS |
+| OS | Ubuntu 24.04 LTS / 25.04 |
 | CPU | AMD Ryzen 7 5700G (or similar) |
 | RAM | 64 GB |
 | GPU | NVIDIA GeForce RTX 5090 32 GB VRAM |
@@ -43,7 +43,13 @@ hermes gateway start
 Firecrawl gives Hermes the ability to scrape, crawl, and extract content from websites. Running it locally keeps all data on your machine and avoids API rate limits.
 
 ```bash
-bash scripts/install_firecrawl_docker.sh
+bash install_firecrawl_docker.sh
+```
+
+Then tell Hermes where to find it by adding this line to `~/.hermes/.env` and restarting the gateway:
+
+```bash
+FIRECRAWL_API_URL=http://localhost:3002
 ```
 
 > Full guide: [Fix Firecrawl & Browser on Headless Linux](Doc/fix-firecrawl-and-browser.md)
@@ -52,10 +58,10 @@ bash scripts/install_firecrawl_docker.sh
 
 #### Step B — Autostart Services at Boot (no login required)
 
-Makes Firecrawl, the Hermes gateway, and Chrome CDP all start automatically when the machine boots — even before any user logs in.
+Makes Firecrawl and Chrome CDP start automatically when the machine boots — even before any user logs in.
 
 ```bash
-sudo bash scripts/install_autostart_services.sh
+sudo bash install_autostart_services.sh
 ```
 
 This creates and enables two systemd services:
@@ -70,10 +76,56 @@ This creates and enables two systemd services:
 Post-install management:
 
 ```bash
-sudo systemctl status  firecrawl hermes-gateway chrome-cdp
+# System services installed by this script
+sudo systemctl status  firecrawl chrome-cdp
 sudo systemctl restart firecrawl
-sudo journalctl -u hermes-gateway -f
+sudo journalctl -u chrome-cdp -f
+
+# The Hermes gateway is a *user* service — no sudo
+systemctl --user status hermes-gateway
+journalctl --user -u hermes-gateway -f
 ```
+
+---
+
+#### Step C — Chrome DevTools MCP Server (authenticated browser sessions)
+
+Connects Hermes to a real Chrome browser via the Chrome DevTools Protocol (CDP). Required for:
+
+- Web pages that need a logged-in user (Gmail, Twitter/X, LinkedIn, etc.)
+- Sites behind a firewall or paywall with no public API
+- Sites whose API is paid or unavailable
+
+If you ran Step B, Chrome is already running headlessly on port 9222 at boot. To take over with a visible Chrome window after login, use the included helper script:
+
+```bash
+bash chrome_remote_debug.sh
+```
+
+This stops the headless `chrome-cdp` service, opens a visible Chrome window on the same port and profile, then **automatically restarts the headless service** when you close Chrome or the terminal.
+
+To launch Chrome manually without the script (if autostart is not installed):
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=$HOME/.config/google-chrome-ai-agent
+```
+
+Then add to `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  chrome-devtools:
+    command: "npx"
+    args: ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222"]
+    timeout: 60
+    connect_timeout: 30
+```
+
+> Full guide: [Install Chrome DevTools MCP Server](Doc/install-mcp-chrome-dev-tools.md)
+
+> ⚠️ **Security warning:** Chrome DevTools MCP gives Hermes full control over a real browser window, including access to all cookies, saved passwords, and active sessions in that profile. Use a **dedicated Chrome profile** (the `--user-data-dir` flag above) — never point it at your personal profile. Only enable this when you need it for sites with no API alternative. The risk is real but manageable with a separate profile.
 
 ---
 
@@ -94,54 +146,13 @@ After running, open Obsidian, open `~/Obsidian` as your vault, then go to **Sett
 
 ---
 
-#### Step C — Chrome DevTools MCP Server (authenticated browser sessions)
-
-Connects Hermes to a real Chrome browser via the Chrome DevTools Protocol (CDP). Required for:
-
-- Web pages that need a logged-in user (Gmail, Twitter/X, LinkedIn, etc.)
-- Sites behind a firewall or paywall with no public API
-- Sites whose API is paid or unavailable
-
-If you ran Step B, Chrome is already running headlessly on port 9222 at boot. To take over with a visible Chrome window after login, use the included helper script:
-
-```bash
-bash scripts/chrome_remote_debug.sh
-```
-
-This stops the headless `chrome-cdp` service, opens a visible Chrome window on the same port and profile, then **automatically restarts the headless service** when you close Chrome or the terminal.
-
-To launch Chrome manually without the script (if autostart is not installed):
-
-```bash
-google-chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir=$HOME/.config/google-chrome-ai-agent
-```
-
-Then add to `~/.hermes/config.yaml`:
-
-```yaml
-mcp_servers:
-  chrome-devtools:
-    command: "npx"
-    args: ["-y", "chrome-devtools-mcp@latest", "--cdp-endpoint=http://127.0.0.1:9222"]
-    timeout: 60
-    connect_timeout: 30
-```
-
-> Full guide: [Install Chrome DevTools MCP Server](Doc/install-mcp-chrome-dev-tools.md)
-
-> ⚠️ **Security warning:** Chrome DevTools MCP gives Hermes full control over a real browser window, including access to all cookies, saved passwords, and active sessions in that profile. Use a **dedicated Chrome profile** (the `--user-data-dir` flag above) — never point it at your personal profile. Only enable this when you need it for sites with no API alternative. The risk is real but manageable with a separate profile.
-
----
-
 ## 📂 Documentation
 
 | Guide | Description |
 |---|---|
 | [Fix Firecrawl & Browser on Headless Linux](Doc/fix-firecrawl-and-browser.md) | Resolving missing system libraries, sandbox issues, and `--no-sandbox` configuration |
-| [Autostart Services at Boot](scripts/install_autostart_services.sh) | Systemd services for Firecrawl and Chrome CDP — start at boot without login |
-| [Chrome Remote Debug Helper](scripts/chrome_remote_debug.sh) | Switch from headless CDP service to a visible Chrome window and back |
+| [Autostart Services at Boot](install_autostart_services.sh) | Systemd services for Firecrawl and Chrome CDP — start at boot without login |
+| [Chrome Remote Debug Helper](chrome_remote_debug.sh) | Switch from headless CDP service to a visible Chrome window and back |
 | [Nice-to-Have Tools & Skills](Doc/nice_to_have_tools_and_skills.md) | Recommended extras: Firecrawl, Chrome DevTools MCP, Context7 |
 | [Obsidian + Plugins Installer](extras/install_obsidian.sh) | Installs Obsidian and 11 community plugins into a pre-configured vault |
 | [Install a Secondary Hermes Agent in Docker](Doc/install-secondary-hermes-docker.md) | Run a second, isolated Hermes gateway in Docker alongside a bare-metal install |

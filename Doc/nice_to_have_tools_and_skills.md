@@ -22,9 +22,9 @@ To make it start at boot automatically:
 sudo bash install_autostart_services.sh
 ```
 
-**Config in `~/.hermes/config.yaml`:**
-```yaml
-firecrawl_url: http://localhost:3002
+**Config in `~/.hermes/.env`** (Firecrawl is configured by environment variable, not in `config.yaml`):
+```bash
+FIRECRAWL_API_URL=http://localhost:3002
 ```
 
 **Docs:** [Fix Firecrawl & Browser on Headless Linux](fix-firecrawl-and-browser.md)
@@ -54,7 +54,7 @@ The `chrome_remote_debug.sh` script handles the case where the headless `chrome-
 mcp_servers:
   chrome-devtools:
     command: "npx"
-    args: ["-y", "chrome-devtools-mcp@latest", "--cdp-endpoint=http://127.0.0.1:9222"]
+    args: ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222"]
     timeout: 60
     connect_timeout: 30
 ```

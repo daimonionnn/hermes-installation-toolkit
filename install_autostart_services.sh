@@ -9,6 +9,7 @@
 #       installed via "hermes gateway install". No need to duplicate it here.
 #
 # Usage:  sudo ./install_autostart_services.sh
+#         sudo SERVICE_USER=alice ./install_autostart_services.sh   # explicit user
 
 set -euo pipefail
 
@@ -19,7 +20,16 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # ── Resolve the calling user (not root) ───────────────────────────────────────
-SERVICE_USER="${SUDO_USER:-matt}"
+SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-}}"
+if [[ -z "$SERVICE_USER" || "$SERVICE_USER" == "root" ]]; then
+    echo "ERROR: could not determine the non-root user to run the services as." >&2
+    echo "       Run via sudo from that user's shell, or set SERVICE_USER=<name>." >&2
+    exit 1
+fi
+if ! getent passwd "$SERVICE_USER" >/dev/null; then
+    echo "ERROR: user '$SERVICE_USER' does not exist." >&2
+    exit 1
+fi
 USER_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
 USER_UID=$(id -u "$SERVICE_USER")
 USER_GID=$(id -g "$SERVICE_USER")
@@ -48,6 +58,7 @@ cat > /etc/systemd/system/firecrawl.service <<EOF
 Description=Firecrawl Docker Stack
 Documentation=https://github.com/firecrawl/firecrawl
 After=docker.service network-online.target
+Wants=network-online.target
 Requires=docker.service
 
 [Service]
@@ -71,6 +82,7 @@ cat > /etc/systemd/system/chrome-cdp.service <<EOF
 [Unit]
 Description=Google Chrome CDP Remote Debugging (port 9222)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -118,9 +130,13 @@ echo ""
 echo "  firecrawl  → http://localhost:3002"
 echo "  chrome CDP → http://localhost:9222"
 echo ""
-echo " Hermes gateway is managed by its own service:"
+echo " Hermes gateway is managed by its own *user* service (run without sudo):"
 echo "   hermes gateway status"
-echo "   hermes gateway start / stop / install"
+echo "   hermes gateway start / stop / restart / install"
+echo "   journalctl --user -u hermes-gateway -f"
+echo " It only starts at boot without login if lingering is on. Hermes tries to"
+echo " enable it on install; if 'hermes doctor' reports it disabled, run:"
+echo "   sudo loginctl enable-linger $SERVICE_USER"
 echo ""
 echo " Useful commands:"
 echo "   sudo systemctl status  firecrawl chrome-cdp"

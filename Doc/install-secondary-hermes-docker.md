@@ -17,15 +17,15 @@ Never run two Hermes gateways against the same data directory at the same time.
 
 | File | Purpose |
 |---|---|
-| `hermes_docker_secondary.sh` | Helper script for setup, start, logs, shell, stop |
-| `docker-compose.hermes-secondary.yml` | Persistent Docker Compose service for the secondary agent |
+| `docker/hermes_docker_secondary.sh` | Helper script for setup, start, logs, shell, stop |
+| `docker/docker-compose.hermes-secondary.yml` | Persistent Docker Compose service for the secondary agent |
 
 ---
 
 ## Prerequisites
 
 - Docker installed and running
-- Docker Compose available as `docker-compose`
+- Docker Compose v2 available as `docker compose` (override with `COMPOSE_CLI=docker-compose` for the legacy v1 binary)
 - Your local LLM/API provider reachable from the container
 
 If you use LM Studio, Ollama, or another host-side OpenAI-compatible server, do **not** configure the Docker agent with `http://127.0.0.1:...`. Inside the container, `127.0.0.1` means the container itself.
@@ -176,10 +176,12 @@ bash docker/hermes_docker_secondary.sh shell
 # then start chat
 hermes
 
-# Pull the latest image
+# Update to the latest image
 bash docker/hermes_docker_secondary.sh pull
 bash docker/hermes_docker_secondary.sh start
 ```
+
+> **`restart` does not update the image.** It restarts the existing container, which keeps running the image it was created from. Only `pull` followed by `start` recreates the container on the new image. Check which version is actually running with `docker exec hermes-secondary /opt/hermes/.venv/bin/hermes --version` — an old image can lag far behind your bare-metal install and behave differently (for example in provider fallback handling).
 
 ---
 
@@ -212,10 +214,10 @@ http://host.docker.internal:8000/v1
 Or edit `~/.hermes-secondary/config.yaml` directly and restart:
 
 ```yaml
-llm:
-  provider: openai
+model:
+  default: Qwen3.6-27B-FP8   # must match --served-model-name in your vLLM command
+  provider: custom
   base_url: http://host.docker.internal:8000/v1
-  model: Qwen3.6-27B-FP8   # must match --served-model-name in your vLLM command
 ```
 
 ```bash

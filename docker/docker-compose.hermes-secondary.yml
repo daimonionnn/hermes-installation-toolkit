@@ -10,7 +10,9 @@ services:
       - "${HERMES_SECONDARY_API_PORT:-8643}:8642"
     volumes:
       # Keep this separate from ~/.hermes. Never run two gateways on the same data dir.
-      - "${HERMES_SECONDARY_DATA_DIR:-./.hermes-secondary}:/opt/data"
+      # Defaults to the home directory, not the repo: the data dir holds secrets
+      # (.env, auth.json) and must never end up inside a git checkout.
+      - "${HERMES_SECONDARY_DATA_DIR:-${HOME}/.hermes-secondary}:/opt/data"
       # Optional: allow the agent inside the container to control host Docker.
       # - /var/run/docker.sock:/var/run/docker.sock
     tmpfs:

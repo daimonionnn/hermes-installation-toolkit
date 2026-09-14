@@ -38,7 +38,11 @@ install_obsidian() {
     echo "==> Fetching latest Obsidian version..."
     local version
     version=$(curl -s https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v')
+        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' || true)
+    if [[ -z "$version" ]]; then
+        echo "ERROR: could not determine the latest Obsidian version (GitHub API rate limit?)." >&2
+        exit 1
+    fi
     local deb_url="https://github.com/obsidianmd/obsidian-releases/releases/download/v${version}/obsidian_${version}_amd64.deb"
 
     echo "==> Downloading Obsidian v${version}..."
@@ -82,6 +86,18 @@ install_plugin() {
 }
 
 # ── Write .obsidian config files ──────────────────────────────────────────────
+# Each file is written only if it doesn't exist yet, so re-running the script
+# updates plugin binaries without resetting settings changed in Obsidian.
+write_if_missing() {
+    local file="$1"
+    if [[ -e "$file" ]]; then
+        echo "    keeping existing $(basename "$file")"
+        cat > /dev/null
+    else
+        cat > "$file"
+    fi
+}
+
 write_obsidian_config() {
     local obsidian_dir="$VAULT_DIR/.obsidian"
     mkdir -p "$obsidian_dir"
@@ -89,12 +105,12 @@ write_obsidian_config() {
     # Enable all community plugins
     local plugin_list
     plugin_list=$(printf '"%s",' "${!PLUGINS[@]}" | sed 's/,$//')
-    cat > "$obsidian_dir/community-plugins.json" <<EOF
+    write_if_missing "$obsidian_dir/community-plugins.json" <<EOF
 [$plugin_list]
 EOF
 
     # Enable community plugins (disable restricted mode)
-    cat > "$obsidian_dir/app.json" <<EOF
+    write_if_missing "$obsidian_dir/app.json" <<EOF
 {
   "enabledCssSnippets": [],
   "communityPlugins": true
@@ -102,7 +118,7 @@ EOF
 EOF
 
     # Enable useful built-in core plugins
-    cat > "$obsidian_dir/core-plugins.json" <<EOF
+    write_if_missing "$obsidian_dir/core-plugins.json" <<EOF
 {
   "file-explorer": true,
   "global-search": true,

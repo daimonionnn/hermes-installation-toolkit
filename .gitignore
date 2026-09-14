@@ -9,7 +9,12 @@ npm-debug.log*
 # Python
 __pycache__/
 *.pyc
+.env
 .env.local
+
+# Hermes data dirs (contain secrets) - e.g. created by running the compose file directly
+.hermes-secondary/
+.hermes/
 
 # IDE
 .vscode/

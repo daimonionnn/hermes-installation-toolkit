@@ -137,11 +137,13 @@ To have Chrome with remote debugging start automatically, add a desktop entry:
 ```bash
 mkdir -p ~/.config/autostart
 
-cat > ~/.config/autostart/chrome-ai-agent.desktop << 'EOF'
+# Unquoted EOF on purpose: $HOME must expand now, because .desktop files
+# do not expand shell variables in Exec=.
+cat > ~/.config/autostart/chrome-ai-agent.desktop << EOF
 [Desktop Entry]
 Type=Application
 Name=Chrome AI Agent
-Exec=google-chrome-stable --remote-debugging-port=9222 --user-data-dir=/home/$USER/.config/google-chrome-ai-agent
+Exec=google-chrome-stable --remote-debugging-port=9222 --user-data-dir=$HOME/.config/google-chrome-ai-agent
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -158,7 +160,7 @@ Add the MCP server entry to your `~/.hermes/config.yaml`:
 mcp_servers:
   chrome-devtools:
     command: "npx"
-    args: ["-y", "chrome-devtools-mcp@latest", "--cdp-endpoint=http://127.0.0.1:9222"]
+    args: ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222"]
     timeout: 60
     connect_timeout: 30
 ```
@@ -169,19 +171,19 @@ mcp_servers:
 |---|---|---|
 | `command` | `npx` | Runs the MCP server via npx (auto-installs on first run) |
 | `args` | `-y chrome-devtools-mcp@latest` | Pulls latest version without prompts |
-| `--cdp-endpoint` | `http://127.0.0.1:9222` | **Recommended** — connects to your manually-launched Chrome instance |
+| `--browser-url` | `http://127.0.0.1:9222` | **Recommended** — connects to your manually-launched Chrome instance |
 | `timeout` | `60` | Request timeout in seconds (increase for slow pages) |
 | `connect_timeout` | `30` | Connection timeout for CDP handshake |
 
 ### Alternative: Let MCP Manage the Browser (Not Recommended)
 
-If you prefer MCP to launch Chrome automatically, use `--browser-path` instead:
+If you prefer MCP to launch Chrome automatically, use `--executable-path` instead:
 
 ```yaml
 mcp_servers:
   chrome-devtools:
     command: "npx"
-    args: ["-y", "chrome-devtools-mcp@latest", "--browser-path=/usr/bin/google-chrome-stable"]
+    args: ["-y", "chrome-devtools-mcp@latest", "--executable-path=/usr/bin/google-chrome-stable"]
     timeout: 60
     connect_timeout: 30
 ```
@@ -202,7 +204,7 @@ After saving `config.yaml`, restart Hermes Agent. The MCP server auto-starts on 
 
 1. Chrome is running with `--remote-debugging-port=9222` ✅
 2. `curl http://127.0.0.1:9222/json/version` returns JSON ✅
-3. Hermes Agent config has `--cdp-endpoint=http://127.0.0.1:9222` ✅
+3. Hermes Agent config has `--browser-url=http://127.0.0.1:9222` ✅
 4. Hermes Agent restarted ✅
 
 ### Test Navigation
@@ -287,7 +289,7 @@ mcp_chrome_devtools_click(uid="e126")  # Sign in
 
 - Authentication state survives across page navigations within the same session
 - Cookies and `localStorage` are preserved while the browser process is alive
-- **With `--cdp-endpoint` + custom `--user-data-dir`:** Authentication persists even if Hermes Agent restarts, as long as Chrome keeps running
+- **With `--browser-url` + custom `--user-data-dir`:** Authentication persists even if Hermes Agent restarts, as long as Chrome keeps running
 - The browser process stays running as long as you keep it running (or until you close it)
 
 ---
@@ -307,6 +309,15 @@ mcp_chrome_devtools_click(uid="e126")  # Sign in
 **Root cause:** Snap Chromium sandbox blocks CDP connections.
 **Fix:** Install Google Chrome via `.deb` package — see [Step 1](#step-1-install-google-chrome-non-sandboxed).
 
+### ❌ Logins Don't Persist / MCP Opens a Fresh Browser
+
+**Root cause:** chrome-devtools-mcp only *warns* about flags it doesn't recognise (`Unknown arguments: ...`) and then keeps running without them. A misspelled connection flag means it never attaches to your Chrome on port 9222 and silently launches its own clean browser instead. Older guides used `--cdp-endpoint` and `--browser-path`, which are not valid flags.
+**Fix:** Use `--browser-url=http://127.0.0.1:9222` (connect to running Chrome) or `--executable-path=...` (let MCP launch Chrome), then check the log for warnings:
+
+```bash
+grep -a "Unknown arguments" ~/.hermes/logs/mcp-stderr.log | tail
+```
+
 ### ❌ MCP Server Fails to Start
 
 Check the logs:
@@ -316,7 +327,7 @@ cat ~/.hermes/logs/mcp-stderr.log | grep chrome-devtools
 ```
 
 Common fixes:
-- Verify `--cdp-endpoint` points to an accessible Chrome instance
+- Verify `--browser-url` points to an accessible Chrome instance
 - Ensure Node.js is installed and `npx` works from your shell
 - Increase `timeout` if Chrome takes a long time to respond on slow hardware
 
@@ -333,11 +344,11 @@ ps aux | grep "remote-debugging-port=9222"
 
 ## Important Notes
 
-1. **Always use `--cdp-endpoint` with manually-launched Chrome** — This gives you persistent sessions, control over the browser lifecycle, and proper isolation via `--user-data-dir`. The MCP-managed mode (`--browser-path`) is only suitable for quick one-off tasks.
+1. **Always use `--browser-url` with manually-launched Chrome** — This gives you persistent sessions, control over the browser lifecycle, and proper isolation via `--user-data-dir`. The MCP-managed mode (`--executable-path`) is only suitable for quick one-off tasks.
 
-2. **Session persistence across Hermes Agent restarts** — When using `--cdp-endpoint`, your Chrome instance keeps running independently. If Hermes Agent restarts (or crashes), the MCP server simply reconnects to the same Chrome instance — all logins and cookies survive.
+2. **Session persistence across Hermes Agent restarts** — When using `--browser-url`, your Chrome instance keeps running independently. If Hermes Agent restarts (or crashes), the MCP server simply reconnects to the same Chrome instance — all logins and cookies survive.
 
-3. **Cron jobs share the same Chrome session** — Because Chrome runs independently with `--cdp-endpoint`, cron jobs connect to the same browser instance and inherit all authentication state. This is perfect for monitoring tasks that need logged-in access.
+3. **Cron jobs share the same Chrome session** — Because Chrome runs independently with `--browser-url`, cron jobs connect to the same browser instance and inherit all authentication state. This is perfect for monitoring tasks that need logged-in access.
 
 4. **Snap = No CDP** — This is a hard constraint. If Ubuntu auto-installed Chromium via snap, switch to Google Chrome or install from the official PPA.
 

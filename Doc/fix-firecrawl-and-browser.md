@@ -24,7 +24,9 @@
 Error: Could not find Chrome (ver. 131.0.6778.204).
 ```
 
-Firecrawl requires a Chromium runtime plus several system libraries that are absent on minimal Ubuntu server installs.
+Hermes' browser tooling needs a Chromium runtime plus several system libraries that are absent on minimal Ubuntu server installs.
+
+> **Self-hosted Firecrawl does not need a host browser.** The Docker stack installed by [`install_firecrawl_docker.sh`](../install_firecrawl_docker.sh) ships its own Playwright browser in the `playwright-service` container. If Firecrawl itself misbehaves, check `cd ~/firecrawl && docker compose logs playwright-service api` rather than installing libraries on the host.
 
 ### Step 1: Install System Dependencies
 
@@ -62,17 +64,29 @@ sudo apt-get update && sudo apt-get install -y \
 | `xdg-utils` | Desktop integration utilities |
 | `fonts-noto-color-emoji` | Emoji font support |
 
-### Step 2: Install Firecrawl Browser Dependencies
+### Step 2: Install the Browser and Its Dependencies
 
 ```bash
-npx @firecrawl-ui/firecrawl-js@latest browser-with-system-deps install
+npx agent-browser install --with-deps
 ```
 
-This installs the Playwright Chromium bundle and all system-level dependencies it requires.
+This downloads Chrome for Testing for [`agent-browser`](https://www.npmjs.com/package/agent-browser) (the browser backend Hermes uses) and, with `--with-deps`, installs the Linux system libraries it needs. It is the same command Hermes suggests in its own error messages.
 
-### Step 3: Verify
+Alternative, if you prefer Playwright's bundle:
 
-Firecrawl should now work as the backend for `web_search` and `web_extract` tools in Hermes Agent.
+```bash
+npx playwright install --with-deps chromium
+```
+
+### Step 3: Point Hermes at Self-Hosted Firecrawl
+
+Firecrawl is configured through an environment variable, not `config.yaml`. Add this to `~/.hermes/.env`:
+
+```bash
+FIRECRAWL_API_URL=http://localhost:3002
+```
+
+Then restart the gateway (`hermes gateway restart`, or `systemctl --user restart hermes-gateway`). Firecrawl should now work as the backend for the `web_search` and `web_extract` tools.
 
 ---
 
@@ -106,10 +120,12 @@ This config is read on every agent-browser launch and appends `--no-sandbox` to 
 **File:** `~/.hermes/.env`
 
 ```bash
-AGENT_BROWSER_ARGS="--no-sandbox"
+AGENT_BROWSER_ARGS="--no-sandbox,--disable-dev-shm-usage"
 ```
 
-> **Warning:** After editing `.env`, restart the Hermes gateway so new variables take effect. The config file approach is more reliable.
+Multiple arguments are comma-separated. Recent Hermes versions inject this value automatically when they detect an environment that needs it (running as root, in Docker, or under an AppArmor user-namespace restriction), so you only need to set it by hand if that detection misses your setup.
+
+> **Warning:** After editing `.env`, restart the Hermes gateway so new variables take effect.
 
 ### What Does `--no-sandbox` Do?
 
@@ -119,11 +135,11 @@ Normally, Chrome runs child processes inside a Linux sandbox (namespace isolatio
 - Seccomp profiles may conflict with containerization layers
 - Sandbox fails to initialize → Chrome crashes on launch
 
-The `--no-sandbox` flag disables this protection. **This is safe** in the agent-browser context because:
+The `--no-sandbox` flag turns this protection off, so a compromised renderer process runs with the full privileges of the user running Hermes. That is an acceptable trade-off on a dedicated agent machine or VM, but keep it in mind:
 
-- The browser runs in an isolated process
-- It has no access to the user's filesystem outside the workspace
-- Hermes executes it with restricted privileges
+- Run Hermes as an unprivileged user, never as root
+- Prefer a VM or container over your daily desktop account
+- On a desktop with a working sandbox, don't set the flag at all
 
 ---
 
@@ -131,7 +147,7 @@ The `--no-sandbox` flag disables this protection. **This is safe** in the agent-
 
 ```
 ~/.hermes/
-├── .env                          # AGENT_BROWSER_ARGS="--no-sandbox"
+├── .env                          # FIRECRAWL_API_URL, AGENT_BROWSER_ARGS
 ├── config.yaml                   # Main Hermes Agent configuration
 └── ...
 
@@ -168,21 +184,24 @@ web_search(query="test query")
 ## Quick Copy-Paste Summary
 
 ```bash
-# 1. Install system libraries (for Firecrawl)
+# 1. Install system libraries (for the browser)
 sudo apt-get update && sudo apt-get install -y \
   libatk1.0-0 libatk-bridge2.0-0 libcups2 libxcomposite1 \
   libxss1 libxdamage1 libgbm1 libnss3 fonts-liberation \
   libx11-xcb1 libxkbcommon-x11-0 xdg-utils fonts-noto-color-emoji
 
-# 2. Install Firecrawl browser dependencies
-npx @firecrawl-ui/firecrawl-js@latest browser-with-system-deps install
+# 2. Install the browser and its system dependencies
+npx agent-browser install --with-deps
 
-# 3. Disable sandbox (for agent-browser)
+# 3. Point Hermes at self-hosted Firecrawl
+echo 'FIRECRAWL_API_URL=http://localhost:3002' >> ~/.hermes/.env
+
+# 4. Disable sandbox (only on headless servers / VPS where it crashes)
 mkdir -p ~/.agent-browser
 echo '{"args": "--no-sandbox"}' > ~/.agent-browser/config.json
 
-# 4. (Optional) Add to .env as well
-echo 'AGENT_BROWSER_ARGS="--no-sandbox"' >> ~/.hermes/.env
+# 5. Restart the gateway to pick up .env changes
+systemctl --user restart hermes-gateway
 ```
 
 ---
