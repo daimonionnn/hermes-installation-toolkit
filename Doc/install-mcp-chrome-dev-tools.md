@@ -77,6 +77,16 @@ sudo apt-get install -f -y   # Fix missing dependencies if needed
 rm /tmp/google-chrome.deb
 ```
 
+### arm64 (Raspberry Pi and similar)
+
+Google Chrome has no Linux arm64 build. Use the native arm64 Chromium that Hermes already downloaded instead (not snap):
+
+```bash
+ls ~/.hermes/tools/chromium-*/chrome-linux/chrome
+```
+
+`install_autostart_services.sh` and `chrome_remote_debug.sh` pick it up automatically. In the commands below, replace `google-chrome-stable` with that path. Attaching MCP with `--browser-url=http://127.0.0.1:9222` needs no binary path at all. See [Browser Automation: CDP Explained](browser-cdp-explained.md).
+
 ### Verifying the Installation
 
 ```bash

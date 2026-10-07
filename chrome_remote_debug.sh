@@ -11,9 +11,14 @@ PORT=9222
 USER_DATA_DIR="$HOME/.config/google-chrome-ai-agent"
 SERVICE="chrome-cdp.service"
 
-CHROME_BIN=$(command -v google-chrome || command -v google-chrome-stable || true)
+# Same lookup as install_autostart_services.sh: Google Chrome, else the
+# Playwright Chromium bundled with Hermes (Chrome has no Linux arm64 build).
+CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v google-chrome-stable || true)}"
 if [[ -z "$CHROME_BIN" ]]; then
-    echo "ERROR: google-chrome not found in PATH" >&2
+    CHROME_BIN=$(ls -1d "$HOME"/.hermes/tools/chromium-*/chrome-linux/chrome 2>/dev/null | sort -V | tail -n1 || true)
+fi
+if [[ -z "$CHROME_BIN" ]]; then
+    echo "ERROR: no Chrome/Chromium found (install google-chrome or set CHROME_BIN=/path/to/chrome)" >&2
     exit 1
 fi
 
@@ -40,7 +45,7 @@ if port_in_use; then
     exit 1
 fi
 
-echo "==> Starting Chrome with remote debugging on port $PORT"
+echo "==> Starting $CHROME_BIN with remote debugging on port $PORT"
 echo "    CDP endpoint: http://localhost:$PORT"
 echo "    Close this terminal or press Ctrl-C to stop Chrome and restore the headless service."
 echo ""

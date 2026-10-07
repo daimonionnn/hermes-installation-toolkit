@@ -15,7 +15,7 @@ Recommended extras that significantly extend what Hermes can do. All of these ar
 bash install_firecrawl_docker.sh
 ```
 
-Firecrawl runs as a Docker stack (API + Playwright browser + Redis + RabbitMQ + Postgres). After install it listens on `http://localhost:3002`.
+Firecrawl runs as a Docker stack (API + Playwright browser + Redis + RabbitMQ + Postgres). After install it listens on `http://localhost:3002`. The script works on x86-64 and arm64. On arm64 or low-RAM machines it adds a Compose override and lighter concurrency settings automatically.
 
 To make it start at boot automatically:
 ```bash
@@ -39,7 +39,8 @@ FIRECRAWL_API_URL=http://localhost:3002
 
 **Install Chrome and start it with remote debugging:**
 ```bash
-# One-time: install Chrome
+# One-time: install Chrome (x86-64 only; on arm64 skip this, the scripts
+# fall back to the Chromium that Hermes downloads into ~/.hermes/tools)
 wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 sudo dpkg -i /tmp/chrome.deb && sudo apt-get install -f -y
 

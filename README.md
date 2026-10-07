@@ -18,6 +18,8 @@ A practical guide and set of scripts for installing **Hermes Agent** — a fully
 | GPU | NVIDIA GeForce RTX 5090 32 GB VRAM |
 | LLM | Qwen 3.6 27B Q4\_M via LM Studio (local, OpenAI-compatible API) |
 
+The primary target is an x86-64 PC like the one above. The same setup also runs well on a **Raspberry Pi 4 (8 GB)** with the LLM served from another machine. See [Running on Raspberry Pi 4 (arm64)](#-running-on-raspberry-pi-4-arm64).
+
 ---
 
 ## 🚀 Quick Start
@@ -72,6 +74,8 @@ This creates and enables two systemd services:
 | `chrome-cdp.service` | Chrome headless + CDP remote debugging | 9222 |
 
 > **Note:** The native Hermes gateway is already managed by its own user service, installed automatically by `hermes gateway install` during setup. Run `hermes gateway status` to check it.
+
+To make Hermes' built-in browser tools use this always-on browser instead of launching their own, add `cdp_url: "http://localhost:9222"` under `browser:` in `~/.hermes/config.yaml` and restart the gateway. See [Browser Automation: CDP Explained](Doc/browser-cdp-explained.md) for when that is worth it.
 
 Post-install management:
 
@@ -157,6 +161,7 @@ After running, open Obsidian, open `~/Obsidian` as your vault, then go to **Sett
 | [Obsidian + Plugins Installer](extras/install_obsidian.sh) | Installs Obsidian and 11 community plugins into a pre-configured vault |
 | [Install a Secondary Hermes Agent in Docker](Doc/install-secondary-hermes-docker.md) | Run a second, isolated Hermes gateway in Docker alongside a bare-metal install |
 | [Install Chrome DevTools MCP Server](Doc/install-mcp-chrome-dev-tools.md) | Setting up browser automation with persistent sessions via CDP |
+| [Browser Automation: CDP Explained](Doc/browser-cdp-explained.md) | What CDP is, Hermes' default browser, `browser.cdp_url`, and how it differs from Chrome DevTools MCP |
 | [Migrate from OpenClaw](Doc/openclaw_migration.md) | Archiving your OpenClaw workspace and importing data into Hermes |
 
 ---
@@ -167,6 +172,7 @@ After running, open Obsidian, open `~/Obsidian` as your vault, then go to **Sett
 hermes-installation-toolkit/
 ├── README.md                          # You are here
 ├── Doc/
+│   ├── browser-cdp-explained.md       # CDP vs. DevTools MCP, browser.cdp_url
 │   ├── fix-firecrawl-and-browser.md   # Firecrawl deps + browser sandbox fix
 │   ├── install-secondary-hermes-docker.md # Second isolated Hermes in Docker
 │   ├── install-mcp-chrome-dev-tools.md # Chrome DevTools MCP setup guide
@@ -214,6 +220,62 @@ hermes
 ```
 
 Full guide: [Install a Secondary Hermes Agent in Docker](Doc/install-secondary-hermes-docker.md)
+
+---
+
+## 🍓 Running on Raspberry Pi 4 (arm64)
+
+The primary target of this toolkit is an x86-64 PC, but the full stack (Hermes gateway + self-hosted Firecrawl + always-on Chrome CDP) also runs comfortably on a Raspberry Pi 4 with 8 GB RAM.
+
+| Component | Spec |
+|---|---|
+| Board | Raspberry Pi 4 Model B, 8 GB RAM, 128 GB microSD |
+| OS | Ubuntu 26.04 LTS (arm64) |
+| LLM | Served from another machine on the LAN (OpenAI-compatible API, e.g. `http://192.168.1.x:8090/v1`) |
+| Swap | 4 GB (swapfile) |
+
+**The Pi does not run the LLM.** It runs Hermes and the tools, while inference happens on a GPU machine. Point Hermes at it with `hermes setup model` (custom OpenAI-compatible provider).
+
+### What works out of the box
+
+- **Hermes Agent and gateway**, including autostart at boot via its user service and linger.
+- **Browser tools.** Hermes downloads its own native arm64 Chromium into `~/.hermes/tools/`.
+- **Chrome CDP service.** Google Chrome has no Linux arm64 build, so `install_autostart_services.sh` automatically uses Hermes' bundled Chromium instead. See [Browser Automation: CDP Explained](Doc/browser-cdp-explained.md).
+- **Firecrawl images.** `firecrawl`, `playwright-service` and `nuq-postgres` all publish arm64 images.
+- **`chrome_remote_debug.sh`** uses the same Chrome → bundled-Chromium fallback (needs a desktop session for the visible window).
+
+### Pi-specific adjustments
+
+**1. Install Docker first.** It is not preinstalled on Ubuntu for Pi:
+
+```bash
+sudo apt install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker $USER   # then log out and back in
+```
+
+**2. Run `install_firecrawl_docker.sh` as usual.** It detects arm64 and low-RAM machines and handles three problems that break the upstream `docker-compose.yaml` on a Pi:
+
+| Problem on the Pi | What the script does |
+|---|---|
+| **RabbitMQ** crashes with `.erlang.cookie: eacces`: the healthcheck creates the cookie as root before the slow server starts | runs RabbitMQ as uid 999 with a 120 s healthcheck grace period (applied on every platform, harmless on x86) |
+| **FoundationDB** dies with `Illegal instruction` (exit 132): its arm64 build needs a newer CPU than the Pi 4's Cortex-A72 | moves it to the optional `fdb` profile on arm64; Firecrawl uses Postgres by default anyway |
+| **The API** misses its 60 s startup deadline and the 8 GB RAM is tight | appends a 5 min startup timeout and lower concurrency to `~/firecrawl/.env` (arm64 or < 12 GB RAM) |
+
+The fixes live in `~/firecrawl/docker-compose.override.yaml`, which Compose merges automatically. The script regenerates that file on re-runs, unless you remove its first line to take ownership. The first start takes a few minutes, and the script waits for the API before it exits.
+
+**3. Add swap.** Firecrawl, Chromium and Hermes together use most of the 8 GB, and the default 1 GB swap fills up. Add a second swapfile (safe even when the existing one is full):
+
+```bash
+sudo fallocate -l 3G /swapfile2 && sudo chmod 600 /swapfile2
+sudo mkswap /swapfile2 && sudo swapon /swapfile2
+echo '/swapfile2 none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### Tips
+
+- **Watch memory.** Hermes logs `system memory pressure is elevated` and throttles background workers when RAM is tight. Check with `free -h`.
+- **The always-on browser is optional.** Skip `chrome-cdp.service` and `browser.cdp_url` if you don't need persistent logins, and Hermes will start Chromium only when needed.
+- **If the LLM server changes IP**, update `base_url` in `~/.hermes/config.yaml` (both under `model:` and `custom_providers:`). Make sure the server listens on `0.0.0.0`, not on one fixed address.
 
 ---
 

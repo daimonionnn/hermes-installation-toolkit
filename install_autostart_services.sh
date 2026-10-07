@@ -4,12 +4,15 @@
 # Creates and enables two systemd services that start at boot (no login required):
 #   firecrawl.service  – Firecrawl Docker stack      → http://localhost:3002
 #   chrome-cdp.service – Chrome remote debugging CDP → http://localhost:9222
+#                        (uses google-chrome, else the Chromium bundled with
+#                        Hermes in ~/.hermes/tools; skipped if neither exists)
 #
 # NOTE: The native Hermes gateway is already managed by its own user service
 #       installed via "hermes gateway install". No need to duplicate it here.
 #
 # Usage:  sudo ./install_autostart_services.sh
 #         sudo SERVICE_USER=alice ./install_autostart_services.sh   # explicit user
+#         sudo CHROME_BIN=/path/to/chrome ./install_autostart_services.sh
 
 set -euo pipefail
 
@@ -48,8 +51,26 @@ echo ""
 [[ -d "$FIRECRAWL_DIR" ]] || { echo "ERROR: $FIRECRAWL_DIR not found"; exit 1; }
 [[ -x "$DOCKER" ]]        || { echo "ERROR: $DOCKER not found or not executable"; exit 1; }
 
-CHROME_BIN=$(command -v google-chrome || command -v google-chrome-stable || true)
-[[ -n "$CHROME_BIN" ]] || { echo "ERROR: google-chrome not found in PATH"; exit 1; }
+# Google Chrome has no Linux arm64 build, so fall back to the Playwright
+# Chromium that Hermes downloads into ~/.hermes/tools (newest version wins).
+# Override with CHROME_BIN=/path/to/chrome.
+CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v google-chrome-stable || true)}"
+if [[ -z "$CHROME_BIN" ]]; then
+    CHROME_BIN=$(ls -1d "$USER_HOME"/.hermes/tools/chromium-*/chrome-linux/chrome 2>/dev/null | sort -V | tail -n1 || true)
+fi
+if [[ -n "$CHROME_BIN" && ! -x "$CHROME_BIN" ]]; then
+    echo "ERROR: CHROME_BIN=$CHROME_BIN is not executable" >&2
+    exit 1
+fi
+if [[ -z "$CHROME_BIN" ]]; then
+    echo "WARNING: no Chrome/Chromium found; skipping chrome-cdp.service."
+    echo ""
+else
+    echo "    Chrome      : $CHROME_BIN"
+    echo ""
+fi
+SERVICES=(firecrawl.service)
+[[ -n "$CHROME_BIN" ]] && SERVICES+=(chrome-cdp.service)
 
 # ── 1. firecrawl.service ──────────────────────────────────────────────────────
 echo "==> Writing /etc/systemd/system/firecrawl.service"
@@ -70,13 +91,14 @@ WorkingDirectory=$FIRECRAWL_DIR
 EnvironmentFile=-$FIRECRAWL_DIR/.env
 ExecStart=$DOCKER compose up -d --remove-orphans
 ExecStop=$DOCKER compose down
-TimeoutStartSec=120
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # ── 2. chrome-cdp.service ────────────────────────────────────────────────────
+if [[ -n "$CHROME_BIN" ]]; then
 echo "==> Writing /etc/systemd/system/chrome-cdp.service"
 cat > /etc/systemd/system/chrome-cdp.service <<EOF
 [Unit]
@@ -104,31 +126,33 @@ KillMode=control-group
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 # ── Reload, enable, start ─────────────────────────────────────────────────────
 echo ""
 echo "==> Reloading systemd and enabling services..."
 systemctl daemon-reload
-systemctl enable firecrawl.service chrome-cdp.service
+systemctl enable "${SERVICES[@]}"
 
 echo "==> Starting services..."
-systemctl start firecrawl.service
-systemctl start chrome-cdp.service
+systemctl start "${SERVICES[@]}"
 
 echo ""
 echo "==> Status:"
 echo "--- firecrawl ---"
 systemctl status firecrawl.service --no-pager -l || true
 echo ""
-echo "--- chrome-cdp ---"
-systemctl status chrome-cdp.service --no-pager -l || true
+if [[ -n "$CHROME_BIN" ]]; then
+    echo "--- chrome-cdp ---"
+    systemctl status chrome-cdp.service --no-pager -l || true
+fi
 
 echo ""
 echo "============================================================"
 echo " Services installed and started."
 echo ""
 echo "  firecrawl  → http://localhost:3002"
-echo "  chrome CDP → http://localhost:9222"
+[[ -n "$CHROME_BIN" ]] && echo "  chrome CDP → http://localhost:9222"
 echo ""
 echo " Hermes gateway is managed by its own *user* service (run without sudo):"
 echo "   hermes gateway status"
