@@ -160,6 +160,7 @@ After running, open Obsidian, open `~/Obsidian` as your vault, then go to **Sett
 | [Nice-to-Have Tools & Skills](Doc/nice_to_have_tools_and_skills.md) | Recommended extras: Firecrawl, Chrome DevTools MCP, Context7 |
 | [Obsidian + Plugins Installer](extras/install_obsidian.sh) | Installs Obsidian and 11 community plugins into a pre-configured vault |
 | [Install a Secondary Hermes Agent in Docker](Doc/install-secondary-hermes-docker.md) | Run a second, isolated Hermes gateway in Docker alongside a bare-metal install |
+| [Running Multiple Hermes Instances (Profiles)](Doc/run-multiple-hermes-profiles.md) | Several agents on one bare-metal install: profiles, per-profile gateways, migrating the Docker instance |
 | [Install Chrome DevTools MCP Server](Doc/install-mcp-chrome-dev-tools.md) | Setting up browser automation with persistent sessions via CDP |
 | [Browser Automation: CDP Explained](Doc/browser-cdp-explained.md) | What CDP is, Hermes' default browser, `browser.cdp_url`, and how it differs from Chrome DevTools MCP |
 | [Migrate from OpenClaw](Doc/openclaw_migration.md) | Archiving your OpenClaw workspace and importing data into Hermes |
@@ -177,11 +178,13 @@ hermes-installation-toolkit/
 │   ├── install-secondary-hermes-docker.md # Second isolated Hermes in Docker
 │   ├── install-mcp-chrome-dev-tools.md # Chrome DevTools MCP setup guide
 │   ├── nice_to_have_tools_and_skills.md # Recommended extras: Firecrawl, CDP, Context7
-│   └── openclaw_migration.md          # OpenClaw → Hermes migration steps
+│   ├── openclaw_migration.md          # OpenClaw → Hermes migration steps
+│   └── run-multiple-hermes-profiles.md # Several bare-metal instances via profiles
 ├── install_hermes.sh                  # One-liner: curl installer wrapper
 ├── install_firecrawl_docker.sh        # Self-hosted Firecrawl via Docker Compose
 ├── install_autostart_services.sh      # Systemd autostart: Firecrawl + Chrome CDP
 ├── chrome_remote_debug.sh             # Switch headless CDP → visible Chrome window
+├── migrate_docker_hermes_to_profile.sh # Docker instance → bare-metal profile
 ├── docker/
 │   ├── hermes_docker_secondary.sh             # Secondary Docker Hermes helper
 │   └── docker-compose.hermes-secondary.yml  # Secondary Docker Hermes Compose service
@@ -220,6 +223,44 @@ hermes
 ```
 
 Full guide: [Install a Secondary Hermes Agent in Docker](Doc/install-secondary-hermes-docker.md)
+
+---
+
+## 👥 Multiple Hermes Instances Without Docker (Profiles)
+
+Hermes runs several independent agents from one bare-metal install. **Profiles** give each one its own config, keys, bot token, skills, sessions, memory and gateway service, while sharing the installed code:
+
+```bash
+# 1) Create a second instance, inheriting your working model config
+hermes profile create research --clone
+
+# 2) Use it — the create step also installs a wrapper script of the same name
+research chat
+research setup model
+
+# 3) Give it its own gateway service (start is manual, not at boot)
+research gateway install --start-now --no-start-on-login
+
+# 4) See everything at a glance
+hermes profile list
+hermes gateway list
+```
+
+| | Path |
+|---|---|
+| `default` profile | `~/.hermes/` |
+| Named profile | `~/.hermes/profiles/<name>/` |
+| Its gateway service | `hermes-gateway-<name>.service` (user service) |
+
+Give each profile its **own bot token**, and its own `API_SERVER_PORT` if you enable the API server — those are the only things that clash. Note that profiles isolate data, **not privileges**: every profile runs as your user. Use the Docker instance above when the second agent should be sandboxed.
+
+Already running the Docker secondary agent and want it native? This moves it over without touching the container's data:
+
+```bash
+bash migrate_docker_hermes_to_profile.sh secondary
+```
+
+Full guide: [Running Multiple Hermes Instances (Profiles)](Doc/run-multiple-hermes-profiles.md)
 
 ---
 
@@ -289,6 +330,8 @@ hermes config edit        # Open config.yaml in your editor
 hermes gateway start      # Launch messaging + cron gateway
 hermes doctor             # Diagnose common issues
 hermes update             # Pull latest version & bundled skills
+hermes profile list       # List instances (see Profiles section above)
+hermes gateway list       # Gateway status of every profile
 ```
 
 ---
